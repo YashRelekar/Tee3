@@ -23,7 +23,7 @@ class PiperTTS:
     
     def __init__(
         self,
-        model_path: str = "/home/jansky/jansky/piper/voices/en_GB-semaine-medium.onnx",
+        model_path: str = "/home/pi/T3/piper/voices/en_GB-semaine-medium.onnx",
         speaking_rate: float = 1.0,
         speaker_id: int = 0  # For multi-speaker models
     ):

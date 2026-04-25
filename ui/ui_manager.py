@@ -27,7 +27,7 @@ class UIManager:
         self,
         width: int = 800,
         height: int = 480,
-        assets_path: str = "/home/jansky/jansky/assets/face",
+        assets_path: str = "/home/pi/T3/assets/face",
         fps: int = 30,
         use_framebuffer: bool = True
     ):

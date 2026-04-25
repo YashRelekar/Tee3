@@ -48,7 +48,7 @@ class Orchestrator:
         self.ui = None
 
         # Initialize components
-        print("Initializing Jansky...")
+        print("Initializing T3 (Pi 4B Edition)...")
 
         # Audio
         print("  - Audio manager")
@@ -176,7 +176,7 @@ class Orchestrator:
         # Start wake word detection after greeting finishes
         self.wake_word.start(callback=self._on_wake_word)
 
-        print("Jansky is running. Say 'Hey Jansky' to activate.")
+        print("T3 is running. Say 'Hey Jansky' to activate.")
         print("Press Ctrl+C to exit.")
 
         # Main loop
