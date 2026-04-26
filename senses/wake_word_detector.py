@@ -16,21 +16,17 @@ try:
 except ImportError:
     OPENWAKEWORD_AVAILABLE = False
 
+from audio.audio_manager import _resolve_mic_device
 
-MIC_NAME = "USB PnP Sound Device"
 
+def _find_mic_device(preferred_name: str = "") -> int:
+    """Find the microphone device index.
 
-def _find_mic_device() -> int:
-    """Find the USB mic device index by name."""
-    devices = sd.query_devices()
-    for i, d in enumerate(devices):
-        if MIC_NAME.lower() in d["name"].lower() and d["max_input_channels"] > 0:
-            return i
-    raise RuntimeError(
-        "Mic '{}' not found. Available: {}".format(
-            MIC_NAME, [(i, d["name"]) for i, d in enumerate(devices)]
-        )
-    )
+    Delegates to :func:`audio.audio_manager._resolve_mic_device` so that the
+    same priority chain (env var → config name → ReSpeaker auto-detect → USB
+    fallback) is used consistently across the whole application.
+    """
+    return _resolve_mic_device(preferred_name)
 
 
 def _find_bundled_model(name: str) -> str:
@@ -51,7 +47,8 @@ class WakeWordDetector:
         sample_rate: int = 16000,
         mic_sample_rate: int = 48000,
         inference_framework: str = "onnx",
-        gain_target_peak: float = 0.9
+        gain_target_peak: float = 0.9,
+        mic_name: str = ""
     ):
         if not OPENWAKEWORD_AVAILABLE:
             raise RuntimeError("openwakeword not installed. Run: pip install openwakeword")
@@ -62,9 +59,10 @@ class WakeWordDetector:
         self.gain_target_peak = gain_target_peak
         self.mic_chunk_size = 3840  # 1280 * 3 (80ms at 48kHz -> 16kHz)
 
-        # Resolve mic device by name (survives USB re-enumeration)
-        self.mic_device = _find_mic_device()
-        print("    Wake word mic: device {} ({})".format(self.mic_device, MIC_NAME))
+        # Resolve mic device using the shared priority chain
+        self.mic_device = _find_mic_device(mic_name)
+        resolved_name = sd.query_devices()[self.mic_device]["name"]
+        print("    Wake word mic: device {} ({})".format(self.mic_device, resolved_name))
 
         # Use custom model if provided, otherwise fall back to built-in hey_jarvis
         use_custom = (

@@ -50,9 +50,79 @@ def _find_alsa_card_by_name(name_substring: str) -> str:
     return "plughw:0,0"
 
 
-# Device name substrings for lookup
-MIC_NAME = "USB PnP Sound Device"
+# Name fragments used when auto-detecting ReSpeaker / XVF3800 / seeed mic arrays
+_RESPEAKER_HINTS = ["respeaker", "xvf3800", "seeed", "2mic", "4mic", "6mic"]
+
+# Device name substring for the speaker (unchanged)
 SPEAKER_NAME = "UACDemoV1.0"
+
+
+def _resolve_mic_device(preferred_name: str = "") -> int:
+    """Resolve the microphone device index using a priority chain.
+
+    Priority order (first match wins):
+      1. ``MIC_NAME`` or ``AUDIO_INPUT_DEVICE`` environment variable
+      2. *preferred_name* argument (e.g. ``mic_name`` from config.json)
+      3. Auto-detect: any device containing a ReSpeaker / XVF3800 / seeed hint
+      4. Auto-detect: legacy "USB PnP Sound Device" (backward-compat)
+      5. Auto-detect: any USB input device
+
+    Raises:
+        RuntimeError: with a helpful message listing available devices and
+            guidance on how to configure the mic when no device is found.
+    """
+    # 1. Environment variable override
+    env_name = os.getenv("MIC_NAME") or os.getenv("AUDIO_INPUT_DEVICE")
+    if env_name:
+        return _find_device_by_name(env_name, "input")
+
+    # 2. Caller-supplied preferred name (from config)
+    if preferred_name:
+        return _find_device_by_name(preferred_name, "input")
+
+    devices = sd.query_devices()
+    input_devices = [
+        (i, d) for i, d in enumerate(devices) if d["max_input_channels"] > 0
+    ]
+
+    if not input_devices:
+        raise RuntimeError(
+            "No audio input devices found.\n"
+            "  - Plug in a USB microphone (e.g. ReSpeaker XVF3800) and retry.\n"
+            "  - Run 'arecord -l' to list ALSA capture devices.\n"
+            "  - Set MIC_NAME=<device name> in your environment or config.\n"
+            "  - Or set DISABLE_AUDIO=1 to start without microphone input."
+        )
+
+    # 3. Auto-detect ReSpeaker / XVF3800 / seeed mic arrays
+    for i, d in input_devices:
+        if any(h in d["name"].lower() for h in _RESPEAKER_HINTS):
+            print("    Auto-detected mic: device {} ({})".format(i, d["name"]))
+            return i
+
+    # 4. Backward compat: original USB PnP Sound Device
+    for i, d in input_devices:
+        if "usb pnp" in d["name"].lower():
+            return i
+
+    # 5. Any USB input device
+    for i, d in input_devices:
+        if "usb" in d["name"].lower():
+            print("    Auto-detected USB mic: device {} ({})".format(i, d["name"]))
+            return i
+
+    # No suitable device found — provide actionable guidance
+    names = [(i, d["name"]) for i, d in input_devices]
+    raise RuntimeError(
+        "No suitable microphone found.\n"
+        "  Available input devices: {}\n"
+        "  Set MIC_NAME=<device name> or AUDIO_INPUT_DEVICE=<device name> in your\n"
+        "  environment or config/config.json (key: \"mic_name\").\n"
+        "  Run 'arecord -l' for ALSA names or:\n"
+        "    python3 -c \"import sounddevice as sd; [print(i, d['name']) "
+        "for i, d in enumerate(sd.query_devices()) if d['max_input_channels'] > 0]\"\n"
+        "  Or set DISABLE_AUDIO=1 to start without microphone input.".format(names)
+    )
 
 
 class AudioManager:
@@ -63,7 +133,8 @@ class AudioManager:
         sample_rate: int = 16000,
         mic_sample_rate: int = 48000,
         channels: int = 1,
-        dtype: str = 'int16'
+        dtype: str = 'int16',
+        mic_name: str = ""
     ):
         self.sample_rate = sample_rate
         self.mic_sample_rate = mic_sample_rate
@@ -75,9 +146,16 @@ class AudioManager:
         self._audio_buffer = []
 
         # Resolve device indices at init time
-        self.mic_device = _find_device_by_name(MIC_NAME, "input")
+        disable_audio = os.getenv("DISABLE_AUDIO", "").lower() in ("1", "true", "yes")
+        if disable_audio:
+            self.mic_device = None
+            print("    Mic: DISABLED (DISABLE_AUDIO is set)")
+        else:
+            self.mic_device = _resolve_mic_device(mic_name)
+            mic_label = sd.query_devices()[self.mic_device]["name"]
+            print("    Mic: device {} ({})".format(self.mic_device, mic_label))
+
         self.speaker_alsa = _find_alsa_card_by_name(SPEAKER_NAME)
-        print("    Mic: device {} ({})".format(self.mic_device, MIC_NAME))
         print("    Speaker: {} ({})".format(self.speaker_alsa, SPEAKER_NAME))
 
     def mute(self):
@@ -108,7 +186,7 @@ class AudioManager:
         Record audio until silence is detected.
         Records at mic_sample_rate (48kHz), then decimates to target sample_rate (16kHz).
         """
-        if self.is_muted:
+        if self.is_muted or self.mic_device is None:
             return None
 
         self._audio_buffer = []

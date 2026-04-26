@@ -48,6 +48,14 @@ class Config:
     # Microphone settings
     mic_sample_rate: int = 48000
     target_sample_rate: int = 16000
+    # Device name substring used to locate the microphone.
+    # Empty string (default) triggers auto-detection: env var MIC_NAME /
+    # AUDIO_INPUT_DEVICE → ReSpeaker/XVF3800/seeed hints → USB PnP → any USB.
+    mic_name: str = ""
+    # When True, skip all audio-input initialisation (mic, wake word, STT).
+    # Useful when starting without a microphone attached.  Set via env var
+    # DISABLE_AUDIO=1 or config.json key "disable_audio": true.
+    disable_audio: bool = False
 
     # Local location default
     local_location: str = "London, UK"
@@ -137,6 +145,15 @@ class Config:
             "NEWSAPI_KEY",
             config.newsapi_key
         )
+
+        # Microphone device — env var overrides config.json
+        env_mic = os.getenv("MIC_NAME") or os.getenv("AUDIO_INPUT_DEVICE")
+        if env_mic:
+            config.mic_name = env_mic
+
+        # DISABLE_AUDIO — skip all audio input
+        if os.getenv("DISABLE_AUDIO", "").lower() in ("1", "true", "yes"):
+            config.disable_audio = True
 
         # cloud_fallback_enabled is implicitly true when moonshot_api_key is set
         if config.moonshot_api_key:
