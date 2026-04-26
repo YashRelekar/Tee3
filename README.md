@@ -171,6 +171,8 @@ All runtime settings live in `config/config.json`.
 | `whisper_threads` | `4` | Threads for Whisper.cpp STT |
 | `wake_word_threshold` | `0.5` | Wake word confidence (0–1) |
 | `mic_sample_rate` | `48000` | Native USB mic sample rate |
+| `mic_name` | `""` | Mic device name substring — empty = auto-detect |
+| `disable_audio` | `false` | Skip all audio input (wake word, recording) |
 | `display_width` / `height` | `800` / `480` | UI resolution |
 | `enable_ui` | `true` | Set `false` for headless mode |
 | `cloud_fallback_enabled` | `true` | Requires `MOONSHOT_API_KEY` in `.env` |
@@ -198,6 +200,64 @@ CHAT_MODEL=phi3:mini python orchestrator.py
 | `qwen2.5:4b` *(default)* | ~2.5 GB | ★★★★ | Good tool-calling, fits comfortably |
 | `phi3:mini` | ~2.3 GB | ★★★ | Faster, slightly less capable |
 | `qwen2.5:1.5b` | ~1.0 GB | ★★ | Smallest option, weakest reasoning |
+
+### Microphone configuration
+
+T3 selects the input device using the following priority chain (first match
+wins):
+
+| Priority | Mechanism | How to set |
+|----------|-----------|------------|
+| 1 | `MIC_NAME` environment variable | `export MIC_NAME="ReSpeaker"` |
+| 2 | `AUDIO_INPUT_DEVICE` environment variable | `export AUDIO_INPUT_DEVICE="ReSpeaker"` |
+| 3 | `mic_name` key in `config/config.json` | `"mic_name": "ReSpeaker"` |
+| 4 | Auto-detect: any device whose name contains `respeaker`, `xvf3800`, `seeed`, `2mic`, `4mic`, or `6mic` | *(automatic)* |
+| 5 | Auto-detect: legacy `USB PnP Sound Device` (backward-compat) | *(automatic)* |
+| 6 | Auto-detect: any other USB input device | *(automatic)* |
+
+#### ReSpeaker XVF3800 4-mic array
+
+Plug the ReSpeaker XVF3800 into any USB port.  T3 auto-detects it at
+priority 4 — no configuration needed.
+
+To confirm the device is visible:
+
+```bash
+arecord -l          # ALSA device list
+# or
+python3 -c "import sounddevice as sd; \
+  [print(i, d['name']) for i, d in enumerate(sd.query_devices()) \
+   if d['max_input_channels'] > 0]"
+```
+
+If the device name shown by those commands does **not** contain one of the
+auto-detect hints above, set `MIC_NAME` to the relevant substring:
+
+```bash
+# One-shot override
+MIC_NAME="USB Audio" python orchestrator.py
+
+# Permanent override in .env
+echo 'MIC_NAME=USB Audio' >> .env
+
+# Or in config/config.json
+{ "mic_name": "USB Audio" }
+```
+
+#### Disabling audio input (mic-free start)
+
+```bash
+DISABLE_AUDIO=1 python orchestrator.py
+```
+
+Or in `config/config.json`:
+
+```json
+{ "disable_audio": true }
+```
+
+This skips mic detection, wake word initialisation, and speech recording.
+TTS output still works normally.
 
 ---
 
@@ -377,7 +437,9 @@ python tests/test_audio_pipeline.py
 
 | Problem | Fix |
 |---------|-----|
-| `Mic 'USB PnP Sound Device' not found` | Run `arecord -l`, update `MIC_NAME` in `audio/audio_manager.py` and `senses/wake_word_detector.py` |
+| `No audio input devices found` | Plug in a USB mic. Run `arecord -l` to verify it appears, then retry. Set `DISABLE_AUDIO=1` to start without a mic. |
+| `No suitable microphone found` | Run `arecord -l` or `python3 -c "import sounddevice as sd; print(sd.query_devices())"` to list devices. Set `MIC_NAME=<substring>` to pick one explicitly (see *Microphone configuration* above). |
+| `Mic '…' not found` (legacy error) | Same as above — set `MIC_NAME` or update `mic_name` in `config/config.json`. |
 | `Speaker 'UACDemoV1.0' not found` | Run `aplay -l`, update `SPEAKER_NAME` in `audio/audio_manager.py` |
 | Whisper not found | Run `which whisper-cpp`; update `whisper_path` in `config/config.json` |
 | Ollama not running | Run `ollama serve` in another terminal, then `ollama pull qwen2.5:4b` |

@@ -54,7 +54,8 @@ class Orchestrator:
         print("  - Audio manager")
         self.audio = AudioManager(
             sample_rate=config.target_sample_rate,
-            mic_sample_rate=config.mic_sample_rate
+            mic_sample_rate=config.mic_sample_rate,
+            mic_name=config.mic_name
         )
 
         print("  - TTS engine")
@@ -113,12 +114,17 @@ class Orchestrator:
         print("  - Joke tool")
 
         # Senses
-        print("  - Wake word detector")
-        self.wake_word = WakeWordDetector(
-            model_path=config.wake_word_model,
-            threshold=config.wake_word_threshold,
-            mic_sample_rate=config.mic_sample_rate
-        )
+        if config.disable_audio:
+            print("  - Wake word detector: DISABLED (DISABLE_AUDIO is set)")
+            self.wake_word = None
+        else:
+            print("  - Wake word detector")
+            self.wake_word = WakeWordDetector(
+                model_path=config.wake_word_model,
+                threshold=config.wake_word_threshold,
+                mic_sample_rate=config.mic_sample_rate,
+                mic_name=config.mic_name
+            )
 
         # UI (optional)
         if config.enable_ui:
@@ -174,9 +180,11 @@ class Orchestrator:
         self._speak("Hello! I'm Jansky. Say hey Jansky to get my attention.")
 
         # Start wake word detection after greeting finishes
-        self.wake_word.start(callback=self._on_wake_word)
-
-        print("T3 is running. Say 'Hey Jansky' to activate.")
+        if self.wake_word:
+            self.wake_word.start(callback=self._on_wake_word)
+            print("T3 is running. Say 'Hey Jansky' to activate.")
+        else:
+            print("T3 is running (audio input disabled — wake word inactive).")
         print("Press Ctrl+C to exit.")
 
         # Main loop
@@ -194,7 +202,8 @@ class Orchestrator:
 
     def _cleanup(self):
         """Clean up resources."""
-        self.wake_word.stop()
+        if self.wake_word:
+            self.wake_word.stop()
         if self.ui:
             self.ui.stop()
 
